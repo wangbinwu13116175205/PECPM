@@ -15,6 +15,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as func
 from Bio.Cluster import kcluster,clustercentroids
+from scipy.spatial.distance import cosine
 from torch import optim
 import torch.multiprocessing as mp
 from torch_geometric.data import Data, Batch, DataLoader
@@ -23,9 +24,9 @@ from torch_geometric.utils import to_dense_batch, k_hop_subgraph
 from utils import common_tools as ct
 from utils.my_math import masked_mae_np, masked_mape_np, masked_mse_np,masked_mae,masked_mape,masked_mse
 from utils.data_convert import generate_samples
-from src.model.mode24423 import Basic_Model
-from src.model.ewc import EWC
-from src.trafficDataset import TrafficDataset
+from src.model.model5 import Basic_Model
+from src.model.ewc4 import EWC
+from src.trafficDataset1 import TrafficDataset
 from src.model import detect
 from src.model import replay
 
@@ -51,9 +52,6 @@ def load_best_model(args):
         
     args.logger.info("[*] load from {}".format(load_path))
     state_dict = torch.load(load_path, map_location=args.device)["model_state_dict"]
-    #if 'tcn2.weight' in state_dict:
-    #    del state_dict['tcn2.weight']
-    #    del state_dict['tcn2.bias']
     model = Basic_Model(args)
     model.load_state_dict(state_dict)
     model = model.to(args.device)
@@ -97,9 +95,36 @@ def seed_set(seed=0):
     torch.cuda.manual_seed_all(random.randint(0, max_seed))
     torch.backends.cudnn.benchmark = False  # if benchmark=True, deterministic will be False
     torch.backends.cudnn.deterministic = True
+def cosine_distance(matrix_a, matrix_c):
+    a, b = matrix_a.shape
+    c, _ = matrix_c.shape
+
+    # 初始化注意力矩阵
+    attention_matrix = np.zeros((a, c))
+
+    # 计算注意力矩阵
+    for i in range(a):
+        for j in range(c):
+            distance = cosine(matrix_a[i], matrix_c[j])
+            attention_matrix[i, j] = 1 - distance
+    return attention_matrix
+def keep_top_k(matrix, k):
+    # 对每行进行排序，返回排序后的索引
+    sorted_indices = np.argsort(matrix, axis=1)
+    
+    # 生成一个与matrix形状相同的全零矩阵
+    result = np.zeros_like(matrix)
+    
+    # 将前K个最大值设置为原始数值，其他设置为0
+    rows = np.arange(matrix.shape[0])[:, np.newaxis]
+    top_k_indices = sorted_indices[:, -k:]
+    result[rows, top_k_indices] = matrix[rows, top_k_indices]
+    
+    return result
 def long_term_pattern(inputs,args):
     # T,L,N
     inputs=inputs['train_x']
+
     T=inputs.shape[0]
     L=inputs.shape[1]
     N=inputs.shape[2]
@@ -109,15 +134,23 @@ def long_term_pattern(inputs,args):
     data23=data[:L,:,:].reshape(-1,288,N)
     data23=data23.sum(axis=0)
     data24=data23.transpose(1,0)
-    attention,_,_=kcluster(data24,nclusters=args.cluster,dist='u')
-    np_attention = np.zeros((len(attention),args.cluster))
-    for i in attention:
-        np_attention[i][attention[i]]=1.0
+    if args.year==args.begin_year:
+        attention,_,_=kcluster(data24,nclusters=args.cluster,dist='u')
+        clusterc,_=clustercentroids(data24,clusterid=attention)
+        vars(args)["last_clusterc"] = clusterc
+        attention=cosine_distance(data24,args.last_clusterc)
+        np_attention=keep_top_k(attention,args.attention_weight[args.year-args.begin_year]) 
+    else:
+        attention,_,_=kcluster(data24,nclusters=args.cluster,dist='u')
+        clusterc,_=clustercentroids(data24,clusterid=attention)
+        vars(args)["last_clusterc"] = clusterc
+        attention=cosine_distance(data24,args.last_clusterc)
+        np_attention=keep_top_k(attention,args.attention_weight[args.year-args.begin_year]) 
+ 
     path = osp.join(args.path, str(args.year))
     ct.mkdirs(path)
     #torch.save({'model_state_dict': model.state_dict()}, osp.join(args.model_path, args.logname+args.time, str(args.year), loss+".pkl"))
     np.save(osp.join(path,'attention.npy'),np_attention.astype(np.float32))
-    
     return np_attention.astype(np.float32)
 
 def train(inputs, args):
@@ -126,10 +159,10 @@ def train(inputs, args):
     path = osp.join(args.path, str(args.year))
     ct.mkdirs(path)
 
-    if args.loss == "mse": lossfunc = func.mse_loss
+    if args.loss == "mse": lossfunc1 = func.mse_loss
     elif args.loss == "huber": lossfunc = func.smooth_l1_loss
     lossfunc= masked_mae
-    cluster_lossf=func.mse_loss
+    cluster_lossf=masked_mae
     # Dataset Definition
     if args.strategy == 'incremental' and args.year > args.begin_year:
         train_loader = DataLoader(TrafficDataset("", "", x=inputs["train_x"][:, :, args.subgraph.numpy()], y=inputs["train_y"][:, :, args.subgraph.numpy()], \
@@ -142,7 +175,9 @@ def train(inputs, args):
         adj = nx.to_numpy_array(graph)
         adj = adj / (np.sum(adj, 1, keepdims=True) + 1e-6)
         vars(args)["sub_adj"] = torch.from_numpy(adj).to(torch.float).to(args.device)
-        np.save('/home/wbw/ijcai5/TrafficStream-main/TrafficStream-main2/results/'+str(args.year)+'.npy',adj)
+        path = osp.join(args.path, str(args.year))
+        np.save(osp.join(path,'adj.npy'),adj)
+        vars(args)["attention"]=args.attention[ args.subgraph.numpy(),:]
     else:
         train_loader = DataLoader(TrafficDataset(inputs, "train"), batch_size=args.batch_size[args.year-args.begin_year], shuffle=True, pin_memory=pin_memory, num_workers=n_work)
         val_loader = DataLoader(TrafficDataset(inputs, "val"), batch_size=args.batch_size[args.year-args.begin_year], shuffle=False, pin_memory=pin_memory, num_workers=n_work)
@@ -155,7 +190,6 @@ def train(inputs, args):
     if args.init == True and args.year > args.begin_year:
         gnn_model, _ = load_best_model(args) 
         if args.ewc:
-            args.logger.info("[*] EWC! lambda {:.6f}".format(args.ewc_lambda[args.year-args.begin_year]))
             model = EWC(gnn_model, args.adj, args.ewc_lambda[args.year-args.begin_year], args.ewc_strategy)
             ewc_loader = DataLoader(TrafficDataset(inputs, "train"), batch_size=args.batch_size[args.year-args.begin_year], shuffle=False, pin_memory=pin_memory, num_workers=n_work)
             model.register_ewc_params(ewc_loader, lossfunc, device)
@@ -169,7 +203,7 @@ def train(inputs, args):
     optimizer = optim.AdamW(model.parameters(), lr=args.lr[args.year-args.begin_year])
 
     args.logger.info("[*] Year " + str(args.year) + " Training start")
-    global_train_steps = len(train_loader) // args.batch_size[args.year-args.begin_year] +1
+
 
     iters = len(train_loader)
     lowest_validation_loss = 1e7
@@ -181,7 +215,6 @@ def train(inputs, args):
         training_loss = 0.0
         start_time = datetime.now()
         
-        # Train Model
         cn = 0
         for batch_idx, data in enumerate(train_loader):
             if epoch == 0 and batch_idx == 0:
@@ -192,19 +225,17 @@ def train(inputs, args):
             pred,attention = model(data, args.sub_adj)
             batch_att=pred.shape[0]//args.sub_adj.shape[0]
             loss_cluster=0
-            if args.year==args.begin_year:
-                attention_label=torch.from_numpy(args.attention.repeat(batch_att,axis=0)).to(args.device)
-                loss_cluster = cluster_lossf(attention,attention_label)          
+            loss_cluster = cluster_lossf(attention,data.attention_label,torch.tensor(0.0))          
             if args.strategy == "incremental" and args.year > args.begin_year:
                 pred, _ = to_dense_batch(pred, batch=data.batch)
                 data.y, _ = to_dense_batch(data.y, batch=data.batch)
                 pred = pred[:, args.mapping, :]
                 data.y = data.y[:, args.mapping, :]
-            #loss = lossfunc(data.y, pred, reduction="mean")
+
             mask_value = torch.tensor(0)
             if data.y.min() < 1:
                 mask_value = data.y.min()
-            #print(loss_cluster)
+
             loss = lossfunc(data.y,pred, mask_value)+loss_cluster*args.beita[args.year-args.begin_year]
             if args.ewc and args.year > args.begin_year:
                 loss += model.compute_consolidation_loss()
@@ -244,7 +275,7 @@ def train(inputs, args):
 
         args.logger.info(f"epoch:{epoch}, training loss:{training_loss:.4f} validation loss:{validation_loss:.4f}")
 
-        # Early Stop
+        test_model(model, args, val_loader, pin_memory,mode='val')
         if validation_loss <= lowest_validation_loss:
             counter = 0
             lowest_validation_loss = round(validation_loss, 4)
@@ -258,42 +289,15 @@ def train(inputs, args):
     best_model = Basic_Model(args)
     best_model.load_state_dict(torch.load(best_model_path, args.device)["model_state_dict"])
     best_model = best_model.to(args.device)
-    
-    # Test Model
-    test_model2(best_model, args, test_loader, pin_memory)
+            
+
+    test_model(best_model, args, test_loader, pin_memory,mode='test')
     result[args.year] = {"total_time": total_time, "average_time": sum(use_time)/len(use_time), "epoch_num": epoch+1}
-    args.logger.info("Finished optimization, total time:{:.2f} s, best model:{}".format(total_time, best_model_path))
-
-
-def test_model(model, args, testset, pin_memory):
-    model.eval()
-    pred_ = []
-    truth_ = []
-    loss = 0.0
-    with torch.no_grad():
-        cn = 0
-        for data in testset:
-            data = data.to(args.device, non_blocking=pin_memory)
-            pred = model(data, args.adj)
-            loss += func.mse_loss(data.y, pred, reduction="mean")
-            #pred, _ = to_dense_batch(pred, batch=data.batch)
-            #data.y, _ = to_dense_batch(data.y, batch=data.batch)
-            pred_.append(pred)   
-            truth_.append(data)
-            cn += 1
-        loss = loss/cn
-        args.logger.info("[*] loss:{:.4f}".format(loss))
-        pred_ =torch.cat(pred_, 0)
-        truth_ = torch.cat(truth_, 0)
-        mask_value = 0.0
-        if truth_.min() < 1:
-            mask_value = truth_.min()
-        mae =all_metric(truth_, pred_, args,mask_value)
-        return loss
 
 
 
-def test_model2(model, args, testset, pin_memory):
+
+def test_model(model, args, testset, pin_memory,mode='test'):
     model.eval()
     pred_ = []
     truth_ = []
@@ -310,16 +314,15 @@ def test_model2(model, args, testset, pin_memory):
             truth_.append(data.y.cpu().data.numpy())
             cn += 1
         loss = loss/cn
-        args.logger.info("[*] loss:{:.4f}".format(loss))
         pred_ = np.concatenate(pred_, 0)
         truth_ = np.concatenate(truth_, 0)
         mask_value = torch.tensor(0)
         if truth_.min() < 1:
             mask_value = truth_.min()
-        mae = metric(truth_, pred_, args,mask_value)
+        mae = metric(truth_, pred_, args,mask_value,mode)
         return loss
 
-def metric(ground_truth, prediction, args,mask_value):
+def metric(ground_truth, prediction, args,mask_value,mode):
     global result
     pred_time = [3,6,12]
     args.logger.info("[*] year {}, testing".format(args.year))
@@ -327,10 +330,14 @@ def metric(ground_truth, prediction, args,mask_value):
         mae = masked_mae_np(ground_truth[:, :, :i], prediction[:, :, :i], 0)
         rmse = masked_mse_np(ground_truth[:, :, :i], prediction[:, :, :i], 0) ** 0.5
         mape = masked_mape_np(ground_truth[:, :, :i], prediction[:, :, :i], 0)
-        args.logger.info("T:{:d}\tMAE\t{:.4f}\tRMSE\t{:.4f}\tMAPE\t{:.4f}".format(i,mae,rmse,mape))
         result[i]["mae"][args.year] = mae
         result[i]["mape"][args.year] = mape
         result[i]["rmse"][args.year] = rmse
+        #select hyperparameters
+        if mode=='val' and i==3:
+            print('--------------------------------',mode,'--------------------------------------')
+            args.logger.info("T:{:d}\tMAE\t{:.4f}\tRMSE\t{:.4f}\tMAPE\t{:.4f}".format(i,mae,rmse,mape))
+            print('--------------------------------',mode,'--------------------------------------')
     return mae
 
 def all_metric(ground_truth, prediction, args,mask_value):
@@ -358,21 +365,19 @@ def main(args):
         graph = nx.from_numpy_matrix(np.load(osp.join(args.graph_path, str(year)+"_adj.npz"))["x"])
         vars(args)["graph_size"] = graph.number_of_nodes()
         vars(args)["year"] = year
-        inputs = generate_samples(31, osp.join(args.save_data_path, str(year)+'_30day'), np.load(osp.join(args.raw_data_path, str(year)+".npz"))["x"], graph, val_test_mix=True) \
-            if args.data_process else np.load(osp.join(args.save_data_path, str(year)+"_30day.npz"), allow_pickle=True)
-
-        args.logger.info("[*] Year {} load from {}_30day.npz".format(args.year, osp.join(args.save_data_path, str(year)))) 
+        
+        input_path=args.input_path+'/'+str(year)+'_inputs.npz'
+        inputs = np.load(input_path)
 
         adj = np.load(osp.join(args.graph_path, str(args.year)+"_adj.npz"))["x"]
         adj = adj / (np.sum(adj, 1, keepdims=True) + 1e-6)
         vars(args)["adj"] = torch.from_numpy(adj).to(torch.float).to(args.device)
-        if year== args.begin_year:
-            attention=long_term_pattern(inputs,args)
-            vars(args)["attention"]=attention
+
+        attention=long_term_pattern(inputs,args)
+        vars(args)["attention"]=attention
         if year == args.begin_year and args.load_first_year:
-            # Skip the first year, model has been trained and retrain is not needed
             model, _ = load_best_model(args)
-            test_loader = DataLoader(TrafficDataset(inputs, "test"), batch_size=args.batch_size[args.year-args.begin_year], shuffle=False, pin_memory=pin_memory, num_workers=n_work)
+            test_loader = DataLoader(TrafficDataset(inputs, "test"), batch_size=args.batch_size, shuffle=False, pin_memory=pin_memory, num_workers=n_work)
             test_model(model, args, test_loader, pin_memory=True)
             continue
 
@@ -382,36 +387,30 @@ def main(args):
             model, _ = load_best_model(args)
             
             node_list = list()
-            # Obtain increase nodes
+
             if args.increase:
                 cur_node_size = np.load(osp.join(args.graph_path, str(year)+"_adj.npz"))["x"].shape[0]
                 pre_node_size = np.load(osp.join(args.graph_path, str(year-1)+"_adj.npz"))["x"].shape[0]
                 node_list.extend(list(range(pre_node_size, cur_node_size)))
 
-            # Obtain influence nodes
             if args.detect:
                 args.logger.info("[*] detect strategy {}".format(args.detect_strategy))
                 pre_data = np.load(osp.join(args.raw_data_path, str(year-1)+".npz"))["x"]
                 cur_data = np.load(osp.join(args.raw_data_path, str(year)+".npz"))["x"]
                 pre_graph = np.array(list(nx.from_numpy_matrix(np.load(osp.join(args.graph_path, str(year-1)+"_adj.npz"))["x"]).edges)).T
                 cur_graph = np.array(list(nx.from_numpy_matrix(np.load(osp.join(args.graph_path, str(year)+"_adj.npz"))["x"]).edges)).T
-                # 20% of current graph size will be sampled
-                vars(args)["topk"] = int(0.01*args.graph_size) 
-                influence_node_list = detect.influence_node_selection(model, args, pre_data, cur_data, pre_graph, cur_graph)
-                node_list.extend(list(influence_node_list))
-
-            # Obtain sample nodes
-            if args.replay:
-                vars(args)["replay_num_samples"] = int(0.09*args.graph_size) #int(0.2*args.graph_size)- len(node_list)
-                args.logger.info("[*] replay node number {}".format(args.replay_num_samples))
-                replay_node_list = replay.replay_node_selection(args, inputs, model)
-                node_list.extend(list(replay_node_list))
+                
+                replay_num=int(0.09*args.graph_size)
+                evo_num=int(0.01*args.graph_size)
+                replay_node,evo_node=detect.get_eveloved_nodes(args,replay_num,evo_num)
+                
+                node_list.extend(list(replay_node))
+                node_list.extend(list(evo_node))
             
             node_list = list(set(node_list))
             if len(node_list) > int(0.2*args.graph_size):
                 node_list = random.sample(node_list, int(0.2*args.graph_size))
             
-            # Obtain subgraph of node list
             cur_graph = torch.LongTensor(np.array(list(nx.from_numpy_matrix(np.load(osp.join(args.graph_path, str(year)+"_adj.npz"))["x"]).edges)).T)
             edge_list = list(nx.from_numpy_matrix(np.load(osp.join(args.graph_path, str(year)+"_adj.npz"))["x"]).edges)
             graph_node_from_edge = set()
@@ -431,12 +430,11 @@ def main(args):
             vars(args)["node_list"] = np.asarray(node_list)
 
 
-        # Skip the year when no nodes needed to be trained incrementally
         if args.strategy != "retrain" and year > args.begin_year and len(args.node_list) == 0:
             model, loss = load_best_model(args)
             ct.mkdirs(osp.join(args.model_path, args.logname+args.time, str(args.year)))
             torch.save({'model_state_dict': model.state_dict()}, osp.join(args.model_path, args.logname+args.time, str(args.year), loss+".pkl"))
-            test_loader = DataLoader(TrafficDataset(inputs, "test"), batch_size=args.batch_size[args.year-args.begin_year], shuffle=False, pin_memory=pin_memory, num_workers=n_work)
+            test_loader = DataLoader(TrafficDataset(inputs, "test"), batch_size=args.batch_size, shuffle=False, pin_memory=pin_memory, num_workers=n_work)
             test_model(model, args, test_loader, pin_memory=True)
             logger.warning("[*] No increasing nodes at year " + str(args.year) + ", store model of the last year.")
             continue
@@ -447,7 +445,7 @@ def main(args):
         else:
             if args.auto_test:
                 model, _ = load_best_model(args)
-                test_loader = DataLoader(TrafficDataset(inputs, "test"), batch_size=args.batch_size[args.year-args.begin_year], shuffle=False, pin_memory=pin_memory, num_workers=n_work)
+                test_loader = DataLoader(TrafficDataset(inputs, "test"), batch_size=args.batch_size, shuffle=False, pin_memory=pin_memory, num_workers=n_work)
                 test_model(model, args, test_loader, pin_memory=True)
 
 
@@ -463,11 +461,7 @@ def main(args):
                             info+="{:.2f}\t".format(result[i][j][year])
             info+="{:.2f}\t".format(all12/7)
             logger.info("{}\t{}\t".format(i,j) + info)
-    #TODO：选择新增节点来评估模型对新知识的扩展性能。
-            
 
-
-    #TODO：选择旧节点（去除显著演化节点）来评估模型巩固知识的效果。
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(formatter_class = argparse.RawTextHelpFormatter)
@@ -477,7 +471,7 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type = int, default = 3208)
     parser.add_argument("--logname", type = str, default = "info")
     parser.add_argument("--load_first_year", type = int, default = 0, help="0: training first year, 1: load from model path of first year")
-    parser.add_argument("--first_year_model_path", type = str, default = "res/district3F11T17/TrafficStream2021-05-09-11:56:33.516033/2011/27.4437.pkl", help='specify a pretrained model root')
+    parser.add_argument("--first_year_model_path", type = str, default = "/home/wbw/ijcai5/TrafficStream-main/TrafficStream-main2/res/district3F11T17/best212-2/2011/15.9668.pkl", help='specify a pretrained model root')
     args = parser.parse_args()
     init(args)
     seed_set(args.seed)
