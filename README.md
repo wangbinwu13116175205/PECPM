@@ -1,6 +1,6 @@
 # PECMP
 
-Code for *Pattern Expansion and Consolidation on Evolving Graphs for Continual Traffic Prediction**（KDD 2023). PECPM is a continual traffic flow forecasting framework, achieving accurate predictions and high efficiency.
+Code for **Pattern Expansion and Consolidation on Evolving Graphs for Continual Traffic Prediction**（KDD 2023). PECPM is a continual traffic flow forecasting framework, achieving accurate predictions and high efficiency.
 
 ### Requirements
 
