@@ -55,9 +55,6 @@ def load_best_model(args):
         
     args.logger.info("[*] load from {}".format(load_path))
     state_dict = torch.load(load_path, map_location=args.device)["model_state_dict"]
-    #if 'tcn2.weight' in state_dict:
-    #    del state_dict['tcn2.weight']
-    #    del state_dict['tcn2.bias']
     model = Basic_Model(args)
     model.load_state_dict(state_dict)
     model = model.to(args.device)
@@ -156,7 +153,7 @@ def train(inputs, args):
     #train_idx,val_idx,test_idx= get_idx(inputs)
     # Dataset Definition
     N=inputs['train_x'].shape[1]
-    pathatt='/home/wbw/ijcai5/TrafficStream-main/TrafficStream-main2/data_our/data/'+str(args.year)+'_attention.npy'
+    pathatt='data/attetion/'+str(args.year)+'_attention.npy'
     attention=np.load(pathatt)
     C=attention.shape[-1]
     attention=attention.reshape(-1,N,C)
@@ -173,9 +170,6 @@ def train(inputs, args):
         adj = adj / (np.sum(adj, 1, keepdims=True) + 1e-6)
         vars(args)["sub_adj"] = torch.from_numpy(adj).to(torch.float).to(args.device)
         path = osp.join(args.path, str(args.year))
-        #np.save(osp.join(path,'adj.npy'),adj)
-        #np.save('/home/wbw/ijcai5/TrafficStream-main/TrafficStream-main2/results/'+str(args.year)+'.npy',adj)
-        #vars(args)["attention"]=args.attention[ args.subgraph.numpy(),:]
     else:
         train_loader = DataLoader(TrafficDataset(inputs, "train",att=attention), batch_size=args.batch_size[args.year-args.begin_year], shuffle=True, pin_memory=pin_memory, num_workers=n_work)
         val_loader = DataLoader(TrafficDataset(inputs, "val",att=attention), batch_size=args.batch_size[args.year-args.begin_year], shuffle=False, pin_memory=pin_memory, num_workers=n_work)
@@ -200,9 +194,9 @@ def train(inputs, args):
 
     # Model Optimizer
     optimizer = optim.AdamW(model.parameters(), lr=args.lr[args.year-args.begin_year])
-    #lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.8)
+
     args.logger.info("[*] Year " + str(args.year) + " Training start")
-#    global_train_steps = len(train_loader) // args.batch_size +1
+
 
     iters = len(train_loader)
     lowest_validation_loss = 1e7
@@ -222,13 +216,10 @@ def train(inputs, args):
                 args.logger.info("node number {}".format(data.x.shape))
             data = data.to(device, non_blocking=pin_memory)
             optimizer.zero_grad()
-            pred,attention = model(data, args.sub_adj)#torch.Size([83840, 64])
+            pred,attention = model(data, args.sub_adj)
             batch_att=pred.shape[0]//args.sub_adj.shape[0]
             loss_cluster=0
-            
-            #attention_label=match_attention(data.x.cpu(),args)
 
-            #attention_label=torch.from_numpy(args.attention.repeat(batch_att,axis=0)).to(args.device)
             attention_label=data.att.to(args.device)
             loss_cluster = func.mse_loss(attention,attention_label)          
             if args.strategy == "incremental" and args.year > args.begin_year:
@@ -236,12 +227,9 @@ def train(inputs, args):
                 data.y, _ = to_dense_batch(data.y, batch=data.batch)
                 pred = pred[:, args.mapping, :]
                 data.y = data.y[:, args.mapping, :]
-            #loss = lossfunc(data.y, pred, reduction="mean")
             mask_value = torch.tensor(0.0)
             if data.y.min() < 1:
                 mask_value = data.y.min()
-            #print(loss_cluster)
-            #print(lossfunc(data.y,pred, mask_value),loss_cluster)0.0036,
             loss = lossfunc(data.y,pred, mask_value)+loss_cluster*args.beita[args.year-args.begin_year]
             if args.ewc and args.year > args.begin_year:
                 loss += model.compute_consolidation_loss()
@@ -291,13 +279,6 @@ def train(inputs, args):
             if counter > patience:
                 break
 
-        #best_model_path = osp.join(path, str(lowest_validation_loss)+".pkl")
-        #best_model = Basic_Model(args)
-        #best_model.load_state_dict(torch.load(best_model_path, args.device)["model_state_dict"])
-        #best_model = best_model.to(args.device)
-            
-            # Test Model
-        #test_model2(model, args, test_loader, pin_memory)
     best_model_path = osp.join(path, str(lowest_validation_loss)+".pkl")
     best_model = Basic_Model(args)
     best_model.load_state_dict(torch.load(best_model_path, args.device)["model_state_dict"])
@@ -320,8 +301,6 @@ def test_model(model, args, testset, pin_memory):
             data = data.to(args.device, non_blocking=pin_memory)
             pred = model(data, args.adj)
             loss += func.mse_loss(data.y, pred, reduction="mean")
-            #pred, _ = to_dense_batch(pred, batch=data.batch)
-            #data.y, _ = to_dense_batch(data.y, batch=data.batch)
             pred_.append(pred)   
             truth_.append(data)
             cn += 1
@@ -404,9 +383,6 @@ def main(args):
         vars(args)["year"] = year
         inputs = generate_samples(31, osp.join(args.save_data_path, str(year)+'_30day'), np.load(osp.join(args.raw_data_path, str(year)+".npz"))["x"], graph, val_test_mix=True) \
             if args.data_process else np.load(osp.join(args.save_data_path, str(year)+"_30day.npz"), allow_pickle=True)
-        #path='/home/wbw/ijcai5/TrafficStream-main/TrafficStream-main2/data/'+str(year)+'_30day1.npz'
-        #np.savez(path,train_x=inputs['train_x'],train_y=inputs['train_y'],val_x=inputs['val_x'],val_y=inputs['val_y'],test_x=inputs['test_x'],test_y=inputs['test_y'])
-        #continue
         args.logger.info("[*] Year {} load from {}_30day.npz".format(args.year, osp.join(args.save_data_path, str(year)))) 
 
         adj = np.load(osp.join(args.graph_path, str(args.year)+"_adj.npz"))["x"]
@@ -516,7 +492,7 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type = int, default = 3208)
     parser.add_argument("--logname", type = str, default = "info")
     parser.add_argument("--load_first_year", type = int, default = 0, help="0: training first year, 1: load from model path of first year")
-    parser.add_argument("--first_year_model_path", type = str, default = "/home/wbw/ijcai5/TrafficStream-main/TrafficStream-main2/res/district3F11T17/best212-2/2011/15.9668.pkl", help='specify a pretrained model root')
+    parser.add_argument("--first_year_model_path", type = str, default = "data-path", help='specify a pretrained model root')
     args = parser.parse_args()
     init(args)
     seed_set(args.seed)
