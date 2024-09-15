@@ -24,9 +24,9 @@ from torch_geometric.utils import to_dense_batch, k_hop_subgraph
 from utils import common_tools as ct
 from utils.my_math import masked_mae_np, masked_mape_np, masked_mse_np,masked_mae,masked_mape,masked_mse
 from utils.data_convert import generate_samples, get_idx
-from src.model.mode24423 import Basic_Model
-from src.model.ewc4 import EWC
-from src.trafficDataset6 import TrafficDataset
+from src.model.model import Basic_Model
+from src.model.ewc import EWC
+from src.trafficDataset import TrafficDataset
 from src.model import detect
 from src.model import replay
 
