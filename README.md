@@ -1,6 +1,6 @@
-# TrafficStream
+# PECMP
 
-Code for **TrafficStream: A Streaming Traffic Flow Forecasting FrameworkBased on Graph Neural Networks and Continual Learning**（IJCAI 2021). TrafficStream is a streaming traffic flow forecasting framework based on Graph Neural Networks (GNNs) and Continual Learning (CL), achieving accurate predictions and high efficiency.
+Code for *Pattern Expansion and Consolidation on Evolving Graphs for Continual Traffic Prediction**（KDD 2023). PECPM is a continual traffic flow forecasting framework, achieving accurate predictions and high efficiency.
 
 ### Requirements
 
@@ -9,7 +9,7 @@ Code for **TrafficStream: A Streaming Traffic Flow Forecasting FrameworkBased on
 * torch-geometric = 1.6.3
 
 ```
-conda env create -f trafficStream.yaml
+conda env create -f PECMP.yaml
 ```
   
 ### Data
@@ -18,20 +18,14 @@ Download raw data from [this](https://drive.google.com/file/d/1P5wowSaNSWBNCK3mQ
 
 ### Usages
 
-* TrafficStream-STModel
+*Data Process
 ```
-python main.py --conf conf/trafficStream.json --gpuid 1
+Please use data_process.ipynb to process the data first.
 ```
-* Expansible-STModel (lower bound):
+
+* PECMP
 ```
-python main.py --conf conf/expansible.json --gpuid 1
+python main.py --conf conf/PECMP.json --gpuid 1
 ```
-* Retrained-STModel (upper bound):
-```
-python main.py --conf conf/retrained.json --gpuid 1
-```
-* Static-STModel:
-```
-python main.py --conf conf/static.json --gpuid 1
-```
+
 
