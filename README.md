@@ -18,7 +18,7 @@ Download raw data from [this](https://drive.google.com/file/d/1P5wowSaNSWBNCK3mQ
 
 ### Usages
 
-*Data Process
+* Data Process
 ```
 Please use data_process.ipynb to process the data first.
 ```
