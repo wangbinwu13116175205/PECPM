@@ -18,9 +18,9 @@
     "beita":[5, 5, 1, 1, 0, 1, 1, 10, 10],
     "cluster":64,
     "attention_weight":[5,5,5,5,5,5,5,5],
-    "raw_data_path": "/home/wbw/ijcai/data/district3F11T17/finaldata/",
-    "save_data_path":  "/home/wbw/ijcai5/TrafficStream-main/TrafficStream-main2/data",
-    "graph_path": "/home/wbw/ijcai/data/district3F11T17/graph/",
+    "raw_data_path": "/home/wbw/kdd/data/district3F11T17/finaldata/",
+    "save_data_path":  "/home/wbw/kdd/TrafficStream-main/TrafficStream-main2/data",
+    "graph_path": "/home/wbw/kdd/data/district3F11T17/graph/",
     "model_path": "res/district3F11T17/",
     "detect_strategy":false,
     "gcn":{
