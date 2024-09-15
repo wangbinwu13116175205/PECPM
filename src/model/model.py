@@ -36,31 +36,29 @@ class Basic_Model(nn.Module):
 
         
     def forward(self, data, adj):
-        #B,T,N,C
-        #data：class，x,y, data.x:bs*N,T
         T=self.args.x_len
         N = adj.shape[0]
         if len(data.x.shape)==4:
             res_x=data.x[...,0]
-            x =data.x[...,0].reshape((-1,N, self.args.gcn["in_channel"]))   # [bs, N, feature]
+            x =data.x[...,0].reshape((-1,N, self.args.gcn["in_channel"])) 
         else:
             input = data.x.reshape(-1,N,self.args.x_len,3)
             res_x=input[...,0].reshape(-1,self.args.x_len)
-            x =input[...,0].reshape((-1,N, self.args.gcn["in_channel"]))   # [bs, N, feature]     
+            x =input[...,0].reshape((-1,N, self.args.gcn["in_channel"]))   
             tem_feature=input[...,1:3].reshape((-1,N, self.args.gcn["in_channel"]*2))
         #tem_x = self.w3(x[:,:,T:])        
-        x = F.relu(self.gcn1(x, adj)+self.w3(tem_feature))                        # [bs, N, feature]
-        x = x.reshape((-1, 1, self.args.gcn["hidden_channel"]))    # [bs * N, 1, feature] torch.Size([83840, 1, 64])            
+        x = F.relu(self.gcn1(x, adj)+self.w3(tem_feature))                       
+        x = x.reshape((-1, 1, self.args.gcn["hidden_channel"]))              
         x = self.tcn1(x)
-        x = torch.mul((x), self.sigmoid(self.w1(x)))                                           # [bs * N, 1, feature] [83840, 1, 64]
-        x = x.reshape((-1, N, self.args.gcn["hidden_channel"]))    # [bs, N, feature] torch.Size([128, 655, 12])
+        x = torch.mul((x), self.sigmoid(self.w1(x)))                                         
+        x = x.reshape((-1, N, self.args.gcn["hidden_channel"]))    
         x = self.gcn2(x, adj)
-        x = x.reshape((-1, 1, self.args.gcn["out_channel"]))                         #torch.Size([128, 655, 12])
+        x = x.reshape((-1, 1, self.args.gcn["out_channel"]))                     
         x=self.tcn2(x)       
  
-        x = torch.mul((x), self.sigmoid(self.w2(x)))                                                    # [bs, N, feature]
-        x = x.reshape((-1, self.args.gcn["out_channel"]))          # [bs * N, feature]
-        attention = torch.matmul(x,self.memory.transpose(0,1)) #B*N, memory_size #B*N, memory_size                               
+        x = torch.mul((x), self.sigmoid(self.w2(x)))                                                
+        x = x.reshape((-1, self.args.gcn["out_channel"]))         
+        attention = torch.matmul(x,self.memory.transpose(0,1))                        
         attention=F.softmax(attention,dim=1)                         
         z=torch.matmul(attention,self.memory)
         x = x + res_x+z
@@ -73,15 +71,15 @@ class Basic_Model(nn.Module):
  
     def feature(self, data, adj):
         N = adj.shape[0]
-        x = data.x.reshape((-1, N, self.args.gcn["in_channel"]))   # [bs, N, feature]
-        x = F.relu(self.gcn1(x, adj))                              # [bs, N, feature]
-        x = x.reshape((-1, 1, self.args.gcn["hidden_channel"]))    # [bs * N, 1, feature]
+        x = data.x.reshape((-1, N, self.args.gcn["in_channel"]))  
+        x = F.relu(self.gcn1(x, adj))                             
+        x = x.reshape((-1, 1, self.args.gcn["hidden_channel"]))    
 
-        x = self.tcn1(x)                                           # [bs * N, 1, feature]
+        x = self.tcn1(x)                                          
 
-        x = x.reshape((-1, N, self.args.gcn["hidden_channel"]))    # [bs, N, feature]
-        x = self.gcn2(x, adj)                                      # [bs, N, feature]
-        x = x.reshape((-1, self.args.gcn["out_channel"]))          # [bs * N, feature]
+        x = x.reshape((-1, N, self.args.gcn["hidden_channel"]))    
+        x = self.gcn2(x, adj)                                      
+        x = x.reshape((-1, self.args.gcn["out_channel"]))         
         
         x = x + data.x
         print(data.x.shape)
