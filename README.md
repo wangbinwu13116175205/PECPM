@@ -28,4 +28,9 @@ Please use data_process.ipynb to process the data first.
 python main.py --conf conf/PECMP.json --gpuid 1
 ```
 
+* Expand and consolidate effects
+```
+Select conflicting and stable nodes to evaluate performance.
+```
+
 
