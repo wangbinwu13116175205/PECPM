@@ -478,9 +478,7 @@ def main(args):
                 if i in result:
                     if j in result[i]:
                         if year in result[i][j]:
-                            all12=all12+result[i][j][year]
                             info+="{:.2f}\t".format(result[i][j][year])
-            info+="{:.2f}\t".format(all12/7)
             logger.info("{}\t{}\t".format(i,j) + info)
 
 
