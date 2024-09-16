@@ -401,30 +401,24 @@ def main(args):
             model, _ = load_best_model(args)
             
             node_list = list()
-            # Obtain increase nodes
-            if args.increase:
-                cur_node_size = np.load(osp.join(args.graph_path, str(year)+"_adj.npz"))["x"].shape[0]
-                pre_node_size = np.load(osp.join(args.graph_path, str(year-1)+"_adj.npz"))["x"].shape[0]
-                node_list.extend(list(range(pre_node_size, cur_node_size)))
 
-            # Obtain influence nodes
-            if args.detect:
-                args.logger.info("[*] detect strategy {}".format(args.detect_strategy))
-                pre_data = np.load(osp.join(args.raw_data_path, str(year-1)+".npz"))["x"]
-                cur_data = np.load(osp.join(args.raw_data_path, str(year)+".npz"))["x"]
-                pre_graph = np.array(list(nx.from_numpy_matrix(np.load(osp.join(args.graph_path, str(year-1)+"_adj.npz"))["x"]).edges)).T
-                cur_graph = np.array(list(nx.from_numpy_matrix(np.load(osp.join(args.graph_path, str(year)+"_adj.npz"))["x"]).edges)).T
-                # 20% of current graph size will be sampled
-                vars(args)["topk"] = int(0.01*args.graph_size) 
-                influence_node_list = detect.influence_node_selection(model, args, pre_data, cur_data, pre_graph, cur_graph)
-                node_list.extend(list(influence_node_list))
+            cur_node_size = np.load(osp.join(args.graph_path, str(year)+"_adj.npz"))["x"].shape[0]
+            pre_node_size = np.load(osp.join(args.graph_path, str(year-1)+"_adj.npz"))["x"].shape[0]
+            node_list.extend(list(range(pre_node_size, cur_node_size)))
 
-            # Obtain sample nodes
-            if args.replay:
-                vars(args)["replay_num_samples"] = int(0.09*args.graph_size) #int(0.2*args.graph_size)- len(node_list)
-                args.logger.info("[*] replay node number {}".format(args.replay_num_samples))
-                replay_node_list = replay.replay_node_selection(args, inputs, model)
-                node_list.extend(list(replay_node_list))
+
+
+            pre_data = np.load(osp.join(args.raw_data_path, str(year-1)+".npz"))["x"]
+            cur_data = np.load(osp.join(args.raw_data_path, str(year)+".npz"))["x"]
+            pre_graph = np.array(list(nx.from_numpy_matrix(np.load(osp.join(args.graph_path, str(year-1)+"_adj.npz"))["x"]).edges)).T
+            cur_graph = np.array(list(nx.from_numpy_matrix(np.load(osp.join(args.graph_path, str(year)+"_adj.npz"))["x"]).edges)).T
+
+            evo_num= int(0.01*args.graph_size)
+            replay_num=int(0.09*args.graph_size)  
+            replay,evo_node = detect.get_eveloved_nodes(args,replay_num,evo_num)
+            node_list.extend(list(evo_node ))
+            node_list.extend(list(replay))
+
             
             node_list = list(set(node_list))
             if len(node_list) > int(0.2*args.graph_size):
