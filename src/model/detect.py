@@ -81,7 +81,7 @@ def get_eveloved_nodes(args,replay_num,evo_num):
     for i in range(daily_node_past.shape[0]):
         distance.append(WD(daily_node_past[i],daily_node_past[i]))
     sorted_index = sort_with_index(distance)
-    replay_node=sorted_index[-int(replay_num*0.5):]
+    replay_node=sorted_index[-int(replay_num*0.1):]
     evo_node=sorted_index[:evo_num]
-    replay_sample=random_sampling(daily_node_past.shape[0],int(replay_num*0.5))
+    replay_sample=random_sampling(daily_node_past.shape[0],int(replay_num*0.9))
     return replay_node+replay_sample,evo_node
