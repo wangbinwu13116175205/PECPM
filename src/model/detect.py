@@ -55,6 +55,7 @@ def sort_with_index(lst):
 def random_sampling(data_size, num_samples):
     return np.random.choice(data_size, num_samples)
 def get_eveloved_nodes(args,replay_num,evo_num):
+    # should be N*T
     past_path=args.daily_node+'/'+str(args.year-1)+'.npy'
     daily_node_past=np.load(past_path)
     cuettern_path=args.daily_node+'/'+str(args.year)+'.npy'
