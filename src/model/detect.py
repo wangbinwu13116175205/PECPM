@@ -76,10 +76,16 @@ def get_eveloved_nodes(args,replay_num,evo_num):
     past_path=args.daily_node+'/'+str(args.year-1)+'.npy'
     daily_node_past=np.load(past_path)
     cuettern_path=args.daily_node+'/'+str(args.year)+'.npy'
-    daily_node_past=np.load(cuettern_path)[:daily_node_past.shape[0],:]
+    daily_node_cur=np.load(cuettern_path)
+    if daily_node_past.shape[0]>daily_node_past.shape[1]:
+        daily_node_cur=daily_node_cur.transpose(1,0)
+        daily_node_past=daily_node_past.transpose(1,0)
+
+    daily_node_cur=np.load(cuettern_path)[:daily_node_past.shape[0],:]
+
     distance=[]
     for i in range(daily_node_past.shape[0]):
-        distance.append(WD(daily_node_past[i],daily_node_past[i]))
+        distance.append(WD(daily_node_past[i],daily_node_cur[i]))
     sorted_index = sort_with_index(distance)
     replay_node=sorted_index[-int(replay_num*0.1):]
     replay_list.extend(replay_node)
