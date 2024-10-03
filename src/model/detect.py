@@ -63,7 +63,7 @@ def get_eveloved_nodes(args,replay_num,evo_num):
         daily_node_cur=daily_node_cur.transpose(1,0)
         daily_node_past=daily_node_past.transpose(1,0)
 
-    daily_node_cur=np.load(cuettern_path)[:daily_node_past.shape[0],:]
+    daily_node_cur=daily_node_cur[:daily_node_past.shape[0],:]
 
     distance=[]
     for i in range(daily_node_past.shape[0]):
